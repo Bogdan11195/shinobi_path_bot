@@ -1,76 +1,166 @@
 #import keep_alive
 import discord
 import json
-from discord.ext import commands
 import random
 import re
 import openai
 import asyncio
 import datetime
+from discord.ext import commands
 
 file = open('config.json', 'r')
 config = json.load(file)
 
-intents = discord.Intents.all()  # Создаем объект intents с нужными значениями
-bot = commands.Bot(config['prefix'],
-                   intents=intents)  # Передаем intents в конструктор бота
+intents = discord.Intents.all()
+bot = commands.Bot(command_prefix=config['prefix'], intents=intents)
 
+# Удаляем стандартную команду help
 bot.remove_command('help')
+
 @bot.command(name='help')
 async def ping(ctx):
-  await ctx.send(f"{ctx.author.mention} \n **!try** - определить успех действия.\n\
-**!roll AdB**(+C)(-D) - бросить кубик в диапазоне от 'A' до 'B', с возможными дополнительными параметрами '+', '-' по желанию.\n \n\
+    await ctx.send(f"{ctx.author.mention} \n **!try** - определить успех действия.\n\
+**!roll AdB**(+-C) — бросок кубика. **A** — мин. число, **B** — макс. число кубика. Можно добавить + или - значение, чтобы скорректировать результат.\n\
+        Например, **/roll 1d100**+15-5 — бросает кубик от 1 до 100, добавляет 15 и отнимает 5 от результата.\n\
+        Формат **/roll 100**+20-10, без использования '**d**' так же считается корректным.\n \n\
   А также ежедневное обновление погодных условий в <#1087032104438743180>, на базе искусственного интеллекта!")
 
+# Создание слэш-команды для "help"
+@bot.tree.command(name="help", description="Что может этот бот?")
+async def help_slash(interaction: discord.Interaction):
+    await interaction.response.send_message(f"{interaction.user.mention} \n **/try** - определить успех действия.\n\
+**/roll AdB**(+-C) — бросок кубика. **A** — мин. число, **B** — макс. число кубика. Можно добавить + или - значение, чтобы скорректировать результат.\n\
+        Например, **/roll 1d100**+15-5 — бросает кубик от 1 до 100, добавляет 15 и отнимает 5 от результата.\n\
+        Формат **/roll 100**+20-10, без использования '**d**' так же считается корректным.\n \n\
+  А также ежедневное обновление погодных условий в <#1087032104438743180>, на базе искусственного интеллекта!")
 
 @bot.command(name='try')
 async def try1(ctx):
-  # Генерируем случайное число от 0 до 1
-  chance = random.randint(0, 1)
-  # Если число равно 0, то отправляем сообщение "Удача"
-  if chance == 0:
-    await ctx.send(f'{ctx.author.mention}, **Неудача** !')
-  # Если число равно 1, то отправляем сообщение "Неудача"
-  else:
-    await ctx.send(f'{ctx.author.mention}, **Удача** !')
+    chance = random.randint(0, 1)
+    if chance == 0:
+        await ctx.send(f'{ctx.author.mention}, **Неудача** !')
+    else:
+        await ctx.send(f'{ctx.author.mention}, **Удача** !')
+
+
+# Создание слэш-команды для "try"
+@bot.tree.command(name="try", description="Определить успех действия")
+async def try_slash(interaction: discord.Interaction):
+    chance = random.randint(0, 1)
+    result = "Неудача" if chance == 0 else "Удача"
+    await interaction.response.send_message(f'{interaction.user.mention}, **{result}**!')
 
 
 @bot.command(name='roll')
 async def roll(ctx, arg=None):
-  if arg is None:
-    arg = '1d100'
-  match = re.match(r'(\d+)d(\d+)(.*)', arg)
-  if match:
-    start = int(match.group(1))
-    end = int(match.group(2))
-    modifiers = match.group(3)
-    result = random.randint(start, end)
-    total = result
-    for modifier in re.findall(r'[\+\-]\d+', modifiers):
-      if modifier[0] == '+':
-        result += int(modifier[1:])
-      else:
-        result -= int(modifier[1:])
-    await ctx.send(
-      f"{ctx.author.mention} Запрос: `[{arg}]` | Чистый: `[{total}]` | Результат: **`{result}`**"
-    )
-  else:
-    await ctx.send(
-      "Неверный формат команды. Пожалуйста, используйте формат !roll AdB(+C)(-D)."
-    )
+    if arg is None:
+        arg = '1d100'
+    
+    # Проверяем, если аргумент — это просто число с возможными модификаторами
+    match = re.match(r'^(\d+)([\+\-]\d+)*$', arg)
+    if match:
+        start = 1
+        end = int(match.group(1))
+        modifiers = arg[len(match.group(1)):]  # Извлекаем модификаторы после числа
+        result = random.randint(start, end)
+        total = result
+        
+        # Применяем модификаторы
+        for modifier in re.findall(r'[\+\-]\d+', modifiers):
+            if modifier[0] == '+':
+                result += int(modifier[1:])
+            else:
+                result -= int(modifier[1:])
+        
+        await ctx.send(
+            f"{ctx.author.mention} Запрос: `[1d{end}{modifiers}]` | Чистый: `[{total}]` | Результат: **`{result}`**"
+        )
+    else:
+        # Если аргумент в формате AdB(+/-X)
+        match = re.match(r'(\d+)d(\d+)(.*)', arg)
+        if match:
+            start = int(match.group(1))
+            end = int(match.group(2))
+            modifiers = match.group(3)
+            result = random.randint(start, end)
+            total = result
+            
+            # Применяем модификаторы
+            for modifier in re.findall(r'[\+\-]\d+', modifiers):
+                if modifier[0] == '+':
+                    result += int(modifier[1:])
+                else:
+                    result -= int(modifier[1:])
+            
+            await ctx.send(
+                f"{ctx.author.mention} Запрос: `[{arg}]` | Чистый: `[{total}]` | Результат: **`{result}`**"
+            )
+        else:
+            await ctx.send("Неверный формат команды. Пожалуйста, используйте формат описанный в ***!help***.")
+
+
+# Создание слэш-команды для "roll"
+@bot.tree.command(name="roll", description="1d100+15-5 — число от 1 до 100, +15 и -5 от результата. Значения можно изменять. 'd' - не обязателен")
+async def roll_slash(interaction: discord.Interaction, message: str):
+    # Проверяем, если аргумент — это просто число с возможными модификаторами
+    match = re.match(r'^(\d+)([\+\-]\d+)*$', message)
+    if match:
+        start = 1
+        end = int(match.group(1))
+        modifiers = message[len(match.group(1)):]  # Извлекаем модификаторы после числа
+        result = random.randint(start, end)
+        total = result
+        
+        # Применяем модификаторы
+        for modifier in re.findall(r'[\+\-]\d+', modifiers):
+            if modifier[0] == '+':
+                result += int(modifier[1:])
+            else:
+                result -= int(modifier[1:])
+        
+        await interaction.response.send_message(
+            f"{interaction.user.mention} Запрос: `[1d{end}{modifiers}]` | Чистый: `[{total}]` | Результат: **`{result}`**"
+        )
+    else:
+        # Если аргумент в формате AdB(+/-X)
+        match = re.match(r'(\d+)d(\d+)(.*)', message)
+        if match:
+            start = int(match.group(1))
+            end = int(match.group(2))
+            modifiers = match.group(3)
+            result = random.randint(start, end)
+            total = result
+            
+            # Применяем модификаторы
+            for modifier in re.findall(r'[\+\-]\d+', modifiers):
+                if modifier[0] == '+':
+                    result += int(modifier[1:])
+                else:
+                    result -= int(modifier[1:])
+            
+            await interaction.response.send_message(
+                f"{interaction.user.mention} Запрос: `[{message}]` | Чистый: `[{total}]` | Результат: **`{result}`**"
+            )
+        else:
+            await interaction.response.send_message("Неверный формат команды. Пожалуйста, используйте формат описанный в ***/help***.")
+
 
 
 # ID канала, в который будут отправляться сообщения
-CHANNEL_ID = 1092664966919753748
+CHANNEL_ID = 1087032104438743180
 
 openai.api_key = config['token_openai']
 
 async def generate_weather_description():
-  # Запрос на генерацию описания погоды с помощью GPT-3 API
-  response = openai.Completion.create(
-    model="text-davinci-003",
-    prompt=
-    'Сгенерируй разное описание текущей погоды в Стране Огня и Стране Воды из вселенной Наруто. Взаимоисключающие варианты: ясная погода/дождь/снег/гроза/туман. \n Форма:\n **Страна Огня:**\n **Страна Воды:**',
+  # Запрос на генерацию описания погоды с помощью GPT-4 API
+  response = openai.chat.completions.create(
+    model="gpt-4o-mini",
+    messages=[
+        {
+            "role": "user",
+            "content": 'Сгенерируй разное описание текущей погоды в Стране Огня, Воды, Ветра и Нейтральных локаций из вселенной Наруто. Взаимоисключающие варианты: ясная погода/дождь/снег/гроза/туман/песчаная буря. Произвольно выбери погодные условия для каждой из стран. \n Форма:\n **Страна Огня:**\n **Страна Воды:**'
+        }
+    ],
     temperature=0.8,
     max_tokens=512,
     top_p=0.6,
@@ -79,7 +169,7 @@ async def generate_weather_description():
     stop=["\"\"\""])
 
   # Отправка сгенерированного текста в текстовый канал Discord
-  description = response.choices[0].text.strip()
+  description = response.choices[0].message.content.strip()
   channel = bot.get_channel(CHANNEL_ID)
 
   embed = discord.Embed(color=0x7dff8a, title="Текущие погодные условия!")
@@ -108,30 +198,33 @@ async def generate_weather_description():
 
 @bot.event
 async def on_ready():
-  await bot.change_presence(status=discord.Status.dnd, activity=discord.Game(name="!help - by @otto"))
-  print('Bot is ready!')
+    await bot.change_presence(status=discord.Status.dnd, activity=discord.Game(name="/help - by Oi Nagasaki!"))
+    print('Bot is ready!')
 
-  # Определяем желаемое время отправки сообщения
-  send_time = datetime.time(5, 59, 0)  # 09:00:00 UTC
+    # Определяем желаемое время отправки сообщения
+    send_time = datetime.time(21, 29, 0)  # 09:00:00 UTC
 
-  while True:
-    # Определяем текущее время
-    current_time = datetime.datetime.utcnow().time()
+    while True:
+        # Определяем текущее время
+        current_time = datetime.datetime.utcnow().time()
 
-    # Определяем разницу во времени между желаемым временем отправки сообщения и текущим временем
-    time_diff = datetime.datetime.combine(
-      datetime.date.today(), send_time) - datetime.datetime.combine(
-        datetime.date.today(), current_time)
+        # Определяем разницу во времени между желаемым временем отправки сообщения и текущим временем
+        time_diff = datetime.datetime.combine(
+            datetime.date.today(), send_time) - datetime.datetime.combine(
+                datetime.date.today(), current_time)
 
-    # Если текущее время более позднее, чем желаемое время отправки сообщения, то ждем до следующего дня
-    if time_diff.days < 0:
-      time_diff = datetime.timedelta(days=1) + time_diff
+        # Если текущее время более позднее, чем желаемое время отправки сообщения, то ждем до следующего дня
+        if time_diff.days < 0:
+            time_diff = datetime.timedelta(days=1) + time_diff
 
-    # Ожидаем до желаемого времени отправки сообщения
-    await asyncio.sleep(time_diff.total_seconds())
+        # Ожидаем до желаемого времени отправки сообщения
+        await asyncio.sleep(time_diff.total_seconds())
 
-    # Генерируем описание погоды
-    await generate_weather_description()
+        # Генерируем описание погоды
+        await generate_weather_description()
+        
+        # Синхронизация команд на сервере при запуске
+        await bot.tree.sync()
 
 
 #keep_alive.keep_alive()

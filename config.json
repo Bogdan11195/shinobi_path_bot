@@ -1,5 +1,5 @@
 {
-    "token": "***",
+    "token": "YOUR_DISCORD_TOKEN",
     "prefix": "!",
-    "token_openai": "***"
+    "token_openai": "YOUR_OPENAI_KEY"
 }
